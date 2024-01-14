@@ -34,7 +34,7 @@ class Transformer_Bert_Model(nn.Module):
         v = self.v_trm_net(v) # [N,num_patch+1,num_hid]
         att = self.v_att(v, q_emb) # [N,num_patch+1,1]
         v_emb = (att * v).sum(1)  # [N,num_hid]
-        return v_emb
+        return v_emb,att
 
     def bert(self, input_ids):
         last_hidden_states = self.bert_net(input_ids) # [N,59,num_hid]
@@ -49,12 +49,12 @@ class Transformer_Bert_Model(nn.Module):
         """
         q_emb = self.bert(q)
         q_emb = self.w_net(q_emb)
-        v_emb = self.patch_net(v, q_emb)
+        v_emb,v_att_weight = self.patch_net(v, q_emb)
         q_repr = self.q_net(q_emb)  # [batch, num_hid]
         v_repr = self.v_net(v_emb)  # [batch, num_hid]
         joint_repr = q_repr * v_repr
         logits = self.classifier(joint_repr)
-        return logits
+        return logits,v_att_weight
 
 
 def build_patch_transformer_ques_bert(dataset, num_hid, lang_model, num_heads, num_layers, num_patches, patch_emb_dim):

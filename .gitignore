@@ -12,3 +12,6 @@ saved_models
 *.ipynb_checkpoints
 *.pyc
 *__pycache__
+/logs/
+/results/
+/reports/

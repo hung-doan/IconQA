@@ -2,6 +2,11 @@ import os
 import sys
 import json
 import argparse
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+from torchvision import transforms
+from PIL import Image
 from tqdm import tqdm
 
 import torch
@@ -67,7 +72,8 @@ def evaluate(model, dataloader, output):
 
         v = v.to(device)
         q = q.to(device)
-        logits = model(v, q)
+        logits,v_att_weight = model(v, q)
+        #print(v_att_weight)
 
         ques_ids = torch.IntTensor([int(ques_id) for ques_id in qid])
         pred[idx:idx + batch_size, :].copy_(logits.data)
@@ -97,6 +103,114 @@ def evaluate(model, dataloader, output):
 
     print("Done!")
 
+def generate_attention_map(att_mat, device):
+     
+    #att_mat = att_mat.squeeze(1)
+    
+
+    # Average the attention weights across all heads.
+    att_mat = torch.mean(att_mat, dim=1).to(torch.device('cpu'))
+
+    # To account for residual connections, we add an identity matrix to the
+    # attention matrix and re-normalize the weights.
+    residual_att = torch.eye(att_mat.size(1))
+    
+    print("\n att_mat:", att_mat.shape)
+    print("\n residual_att:", att_mat.shape)
+    aug_att_mat = att_mat + residual_att
+    aug_att_mat = aug_att_mat / aug_att_mat.sum(dim=-1).unsqueeze(-1)
+
+    # Recursively multiply the weight matrices
+    joint_attentions = torch.zeros(aug_att_mat.size())
+    joint_attentions[0] = aug_att_mat[0]
+
+    for n in range(1, aug_att_mat.size(0)):
+        joint_attentions[n] = torch.matmul(aug_att_mat[n], joint_attentions[n-1])
+        
+    # Attention from the output token to the input space.
+    v = joint_attentions[-1]
+    print("\n joint_attentions v:", v.shape)
+    
+    
+    # Normalize all into the smallest patch.
+    patch_map = [1, 2, 3, 4, 7]
+    v_skip = 0
+    for pa in patch_map:
+        v_grid_size = pa
+        if v_grid_size != 1:
+            visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size)
+        v_skip += v_grid_size * v_grid_size
+    
+    
+    
+def visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size): 
+    question_id = 103
+    #
+    # Visualize
+    #
+    im = Image.open(f"D:/Me/ML/IconQA/mount/data/iconqa_data/iconqa/test/fill_in_blank/{question_id}/image.png")
+    # image transformer
+ 
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+    ])
+    im = transform(im)
+
+
+    #grid_size = int(np.sqrt(aug_att_mat.size(-1)))
+    grid_size = v_grid_size; # Hard coded for now to get the last layer of [1, 2, 3, 4, 7]
+    #mask = v[0, 1:].reshape(grid_size, grid_size).detach().numpy()
+    patch_skip = v_skip + 1
+    patch_take_to =  patch_skip + grid_size*grid_size 
+    
+    print("\n grid_size:", grid_size)
+    print("\n patch_skip:", patch_skip)
+    print("\n patch_take_to:", patch_take_to)
+    mask = v[0, patch_skip:patch_take_to].reshape(grid_size, grid_size).detach().numpy()
+    mask = cv2.resize(mask / mask.max(), im.size)[..., np.newaxis]
+    result = (mask * im).astype("uint8")
+
+    #
+    fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(16, 16))
+
+    ax1.set_title('Original')
+    ax2.set_title('Attention Map')
+    _ = ax1.imshow(im)
+    _ = ax2.imshow(result)
+    #fig.show()
+    
+    fig.savefig(f'../attention_maps/fill_in_blank/test/{question_id}-{v_grid_size}.png')
+hook_activations = {}
+vit_attention_hook_name = 'vit_attention'
+def get_activation(name):
+    def hook(model, input, output):
+        if name == vit_attention_hook_name:
+            print('\n Executed hook: vit_attention')
+            hook_activations[name].append(model.attn_weights)
+        else:
+            hook_activations[name] = output.detach()
+    return hook
+
+def hook_attention_weight(model):
+    hook_activations[vit_attention_hook_name] = []
+    model.v_trm_net.transformer.net[0].fn.fn.register_forward_hook(get_activation(vit_attention_hook_name))
+
+def inspect_attention(batch_size):
+    print("Inspecing the attention")
+    #print(model)
+    print(len(hook_activations[vit_attention_hook_name]))
+    
+    # It dould be [datasize, headsize, ?,?] why 80x80 in the last dim
+    # https://jacobgil.github.io/deeplearning/vision-transformer-explainability
+    # is that mean 80 = number of path 79 + 1 for class token.
+    print(hook_activations[vit_attention_hook_name][0].size())
+    
+    #print(model.v_att.dropout.state_dict())
+    #att_mat = torch.stack(model.v_att.dropout).squeeze(1)
+    #print(att_mat)
+    att_mat=hook_activations[vit_attention_hook_name]
+    # att_mat[0] = first images
+    generate_attention_map(att_mat[0],batch_size)
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -167,4 +281,10 @@ if __name__ == '__main__':
     model.to(device)
 
     # model testing
+    hook_attention_weight(model)
     evaluate(model, test_loader, args.output)
+
+    # Inspect the attention layer
+    inspect_attention(batch_size)
+
+    print("Done.", flush=True)

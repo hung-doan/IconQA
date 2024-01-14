@@ -80,3 +80,67 @@ class TransformerModel(nn.Module):
 
     def forward(self, x):
         return self.net(x)
+
+
+class LayerBlock(nn.Module):
+    def __init__(
+        self,
+        dim,
+        heads,
+        mlp_dim,
+        dropout_rate=0.1,
+        attn_dropout_rate=0.1,
+    ):
+        super().__init__()
+        # Att
+        self.att = SelfAttention(
+                                dim, heads=heads, dropout_rate=attn_dropout_rate
+                            )
+        self.att_norm = nn.LayerNorm(dim)
+        self.att_norm_drop = nn.Dropout(p=dropout_rate)
+
+        # FF
+        self.ffn = FeedForward(dim, mlp_dim, dropout_rate)
+        self.ffn_norm = nn.LayerNorm(dim)
+        
+
+    def forward(self, x):
+
+        # Attention Block
+        # Norm > Att > Residual 
+        residual = x
+        x = self.att_norm(x)
+        x, att_weights = self.att(x)
+        x = self.att_norm_drop(x)
+        x = x + residual
+
+        # Feed forward block
+        # Norm > FFN
+        residual = x
+        x = self.ffn_norm(x)
+        x = self.ffn(x)
+        x = x + residual
+        
+        return x, att_weights
+class TransformerModelV2(nn.Module):
+    def __init__(
+        self,
+        dim,
+        depth,
+        heads,
+        mlp_dim,
+        dropout_rate=0.1,
+        attn_dropout_rate=0.1,
+    ):
+        super().__init__()
+        self.layers = []
+        for _ in range(depth):
+            layer = LayerBlock(dim, heads, mlp_dim, dropout_rate, attn_dropout_rate)
+            self.layers.append(layer)
+
+    def forward(self, x):
+        att_weights = []
+        for layer in self.layers:
+            x, layer_att_weights = layer(x)
+            att_weights.append(layer_att_weights)
+        return x, att_weights
