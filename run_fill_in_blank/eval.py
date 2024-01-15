@@ -103,7 +103,7 @@ def evaluate(model, dataloader, output):
 
     print("Done!")
 
-def generate_attention_map(att_mat, device):
+def generate_attention_map(att_mat, batch_size, question_id):
      
     #att_mat = att_mat.squeeze(1)
     
@@ -138,17 +138,18 @@ def generate_attention_map(att_mat, device):
     for pa in patch_map:
         v_grid_size = pa
         if v_grid_size != 1:
-            visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size)
+            visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size, question_id)
         v_skip += v_grid_size * v_grid_size
     
     
     
-def visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size): 
-    question_id = 103
+def visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size, question_id): 
+    # question_id = 103
     #
     # Visualize
     #
-    im = Image.open(f"D:/Me/ML/IconQA/mount/data/iconqa_data/iconqa/test/fill_in_blank/{question_id}/image.png")
+    im = Image.open(f"{args.input}/iconqa_data/iconqa/test/fill_in_blank/{question_id}/image.png")
+    question_data = json.load(open(f"{args.input}/iconqa_data/iconqa/test/fill_in_blank/{question_id}/data.json"))
     # image transformer
  
     transform = transforms.Compose([
@@ -170,8 +171,9 @@ def visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size):
     mask = cv2.resize(mask / mask.max(), im.size)[..., np.newaxis]
     result = (mask * im).astype("uint8")
 
-    #
+    # Plot figure
     fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(16, 16))
+    fig.suptitle(f'Question {question_id}: {question_data["question"]}')
 
     ax1.set_title('Original')
     ax2.set_title('Attention Map')
@@ -180,6 +182,7 @@ def visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size):
     #fig.show()
     
     fig.savefig(f'../attention_maps/fill_in_blank/test/{question_id}-{v_grid_size}.png')
+
 hook_activations = {}
 vit_attention_hook_name = 'vit_attention'
 def get_activation(name):
@@ -195,8 +198,8 @@ def hook_attention_weight(model):
     hook_activations[vit_attention_hook_name] = []
     model.v_trm_net.transformer.net[0].fn.fn.register_forward_hook(get_activation(vit_attention_hook_name))
 
-def inspect_attention(batch_size):
-    print("Inspecing the attention")
+def inspect_attention(batch_size, question_id):
+    print("Inspecing the attention for question:", question_id)
     #print(model)
     print(len(hook_activations[vit_attention_hook_name]))
     
@@ -210,7 +213,7 @@ def inspect_attention(batch_size):
     #print(att_mat)
     att_mat=hook_activations[vit_attention_hook_name]
     # att_mat[0] = first images
-    generate_attention_map(att_mat[0],batch_size)
+    generate_attention_map(att_mat[0], batch_size, question_id)
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -242,6 +245,9 @@ def parse_args():
 
     # filter testing data
     parser.add_argument('--test_ids', type=str, default=[], nargs='*')
+
+    # Inspect attention    
+    parser.add_argument("--inspect-att", default=False, help='Show attention map or not')
 
     args = parser.parse_args()
     return args
@@ -285,6 +291,7 @@ if __name__ == '__main__':
     evaluate(model, test_loader, args.output)
 
     # Inspect the attention layer
-    inspect_attention(batch_size)
+    if args.inspect_att:
+        inspect_attention(batch_size, args.test_ids[0])
 
     print("Done.", flush=True)
