@@ -87,6 +87,12 @@ class ICONQADataset(data.Dataset):
             patches = self.extract_patches(img, [1, 2, 3, 4])
         elif self.num_patches == 79:
             patches = self.extract_patches(img, [1, 2, 3, 4, 7])
+        elif self.num_patches == 55:
+            patches = self.extract_patches(img, [1, 2, 3, 4, 5])
+        elif self.num_patches == 88:
+            patches = self.extract_patches(img, [1, 2, 3, 5, 7])
+        elif self.num_patches == 189:
+            patches = self.extract_patches(img, [3,6,12])
         
         # num_patches * [3,224,224] -> [num_patches,3,224,224]
         patch_input = self.resize_patches(patches)
@@ -176,12 +182,14 @@ if __name__ == "__main__":
     parser.add_argument("--arch", default="resnet101")
     parser.add_argument("--layer", default="pool5")
     parser.add_argument("--icon_pretrained", default=False, help='use the icon pretrained model or not')
-    parser.add_argument("--patch_split", type=int, default=30, choices=[14,25,30,36,79])
+    parser.add_argument("--patch_split", type=int, default=30, choices=[14,25,30,36,79,55,88,189])
     # tasks and splits
-    parser.add_argument("--split", default="test",
-                        choices=["train", "val", "test", "trainval", "minitrain", "minival", "minitest"])
-    parser.add_argument("--task", default="fill_in_blank",
-                        choices=["fill_in_blank", "choose_txt", "choose_img"])
+    parser.add_argument("--split", default=["test", "val", "train"],
+                        choices=["train", "val", "test", "trainval", "minitrain", "minival", "minitest"],
+                        nargs="+")
+    parser.add_argument("--task", default=["fill_in_blank", "choose_txt", "choose_img"],
+                        choices=["fill_in_blank", "choose_txt", "choose_img"],
+                        nargs="+")
     parser.add_argument("--gpu", type=int, default=0)
     args = parser.parse_args()
 
@@ -192,10 +200,10 @@ if __name__ == "__main__":
         device = torch.device('cpu')
 
     # manual settings
-    tasks = ["fill_in_blank", "choose_txt", "choose_img"]
-    splits = ["test", "val", "train"]
+    tasks = args.task #["fill_in_blank", "choose_txt", "choose_img"]
+    splits = args.split #["test", "val", "train"]
     # splits = ["minival", "minitrain", "test", "val", "train"] # "minival", "minitrain" for quick checking
-
+    
     for task in tasks:
         for split in splits:
             args.task, args.split = task, split

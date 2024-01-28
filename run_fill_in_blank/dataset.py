@@ -4,10 +4,9 @@ import sys
 import json
 import _pickle as cPickle # python3
 import numpy as np
-
+from datetime import datetime
 import torch
 from torch.utils.data import Dataset
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tools import utils
 
@@ -52,14 +51,14 @@ class Dictionary(object):
 
     def dump_to_file(self, path):
         cPickle.dump([self.word2idx, self.idx2word], open(path, 'wb'))
-        print('dictionary dumped to %s' % path)
+        print(datetime.now().isoformat(), " ",'dictionary dumped to %s' % path)
 
     @classmethod
     def load_from_file(cls, path):
-        print('\nloading dictionary from %s' % path)
+        print(datetime.now().isoformat(), " ",'\nloading dictionary from %s' % path)
         word2idx, idx2word = cPickle.load(open(path, 'rb'))
         d = cls(word2idx, idx2word) # initialize the instance
-        print('vocabulary number in the dictionary:', len(idx2word))
+        print(datetime.now().isoformat(), " ",'vocabulary number in the dictionary:', len(idx2word))
         return d
 
     def add_word(self, word):
@@ -84,7 +83,7 @@ def _simplify_question(ques):
         return ques
 
 
-def _load_dataset(dataroot, name, task, ans2label, label2ans):
+def _load_dataset(dataroot, name, task, ans2label, label2ans, test_ids = []):
     """
     Load the IconQA dataset.
     - dataroot: root path of dataset
@@ -95,9 +94,17 @@ def _load_dataset(dataroot, name, task, ans2label, label2ans):
     pid_splits = json.load(open(os.path.join(dataroot, 'iconqa_data', 'pid_splits.json')))
 
     pids = pid_splits['%s_%s' % (task, name)]
-    print("problem number for %s_%s:" % (task, name), len(pids))
+    print(datetime.now().isoformat(), " ","problem number for %s_%s:" % (task, name), len(pids))
 
     entries = []
+    if name == 'test' and len(test_ids) > 0:        
+        #print(pids[0:10])    
+        #print(test_ids[0:10])
+        pids = list(filter(lambda p: p in test_ids, pids))        
+        print(datetime.now().isoformat(), " ", "Test data is filtered to ", len(pids), " items.")
+    else:
+        print(datetime.now().isoformat(), " ", "Test data filtering is NOT applied.")
+
     for pid in pids:
         prob = {}
         prob['question_id'] = pid
@@ -124,7 +131,7 @@ def _load_dataset(dataroot, name, task, ans2label, label2ans):
 
 
 class IconQAFeatureDataset(Dataset):
-    def __init__(self, name, task, feat_label, dataroot, dictionary, lang_model, max_length):
+    def __init__(self, name, task, feat_label, dataroot, dictionary, lang_model, max_length, test_ids = []):
         super(IconQAFeatureDataset, self).__init__ ()
         assert name in ['train', 'val', 'test', 'traninval', 'minitrain', 'minival', 'minitest']
         assert 'bert' in lang_model
@@ -141,7 +148,7 @@ class IconQAFeatureDataset(Dataset):
         self.num_ans_candidates = len(self.ans2label) # 3129
 
         # load and tokenize the questions
-        self.entries = _load_dataset(dataroot, name, task, self.ans2label, self.label2ans)
+        self.entries = _load_dataset(dataroot, name, task, self.ans2label, self.label2ans, test_ids)
         if 'bert' in self.lang_model:
             self.tokenizer = AutoTokenizer.from_pretrained(bert_models[self.lang_model]) # For Bert
         self.tokenize()
@@ -149,17 +156,17 @@ class IconQAFeatureDataset(Dataset):
 
         # load image features
         h5_path = os.path.join(dataroot, 'patch_embeddings', feat_label, 'iconqa_%s_%s_%s.pth' % (name, task, feat_label))
-        print('\nloading features from h5 file:', h5_path)
+        print(datetime.now().isoformat(), " ",'\nloading features from h5 file:', h5_path)
         self.features = torch.load(h5_path)
         self.v_dim = list(self.features.values())[0].size()[1] # [num_patch,2048]
-        print("visual feature dim:", self.v_dim)
+        print(datetime.now().isoformat(), " ","visual feature dim:", self.v_dim)
 
     def tokenize(self):
         """
         Tokenize the questions.
         This will add q_token in each entry of the dataset.
         """
-        print('max question token length is:', self.max_length)
+        print(datetime.now().isoformat(), " ",'max question token length is:', self.max_length)
 
         for entry in self.entries:
             if 'bert' in self.lang_model:
