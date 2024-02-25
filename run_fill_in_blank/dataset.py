@@ -100,8 +100,10 @@ def _load_dataset(dataroot, name, task, ans2label, label2ans, test_ids = []):
     if name == 'test' and len(test_ids) > 0:        
         #print(pids[0:10])    
         #print(test_ids[0:10])
+        original_pids_len = len(pids)
+        #test_ids = ['103']
         pids = list(filter(lambda p: p in test_ids, pids))        
-        print(datetime.now().isoformat(), " ", "Test data is filtered to ", len(pids), " items.")
+        print(datetime.now().isoformat(), " ", "Test data is filtered from", original_pids_len," to ", len(pids), " items.")
     else:
         print(datetime.now().isoformat(), " ", "Test data filtering is NOT applied.")
 

@@ -107,7 +107,7 @@ def generate_attention_map(att_mat, batch_size, question_id):
      
     #att_mat = att_mat.squeeze(1)
     
-
+    print("\n att_mat before Averaging :", att_mat.shape)
     # Average the attention weights across all heads.
     att_mat = torch.mean(att_mat, dim=1).to(torch.device('cpu'))
 
@@ -120,6 +120,7 @@ def generate_attention_map(att_mat, batch_size, question_id):
     aug_att_mat = att_mat + residual_att
     aug_att_mat = aug_att_mat / aug_att_mat.sum(dim=-1).unsqueeze(-1)
 
+    # There are multiples layers in the attention map?
     # Recursively multiply the weight matrices
     joint_attentions = torch.zeros(aug_att_mat.size())
     joint_attentions[0] = aug_att_mat[0]
@@ -128,22 +129,56 @@ def generate_attention_map(att_mat, batch_size, question_id):
         joint_attentions[n] = torch.matmul(aug_att_mat[n], joint_attentions[n-1])
         
     # Attention from the output token to the input space.
+    # e.g if we have 79 image patchs, the attention metrics has the size of (79+1)x (79+1)
+    print("\n joint_attentions size", joint_attentions.size(0))
+    print("\n joint_attentions", joint_attentions.shape)
     v = joint_attentions[-1]
-    print("\n joint_attentions v:", v.shape)
-    
+    print("\n v:", v.shape)
+    #visualize_joinned_attention_map(aug_att_mat, v, question_id)
     
     # Normalize all into the smallest patch.
+    # Temporary hard coded for 79 patches which contains [1, 2, 3, 4, 7]
     patch_map = [1, 2, 3, 4, 7]
     v_skip = 0
     for pa in patch_map:
         v_grid_size = pa
-        if v_grid_size != 1:
-            visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size, question_id)
+        #if v_grid_size != 1:
+        visualize_patch_attention_map(aug_att_mat, v, v_skip, v_grid_size, question_id)
         v_skip += v_grid_size * v_grid_size
     
     
     
-def visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size, question_id): 
+def visualize_joinned_attention_map(aug_att_mat, v, question_id):
+    im = Image.open(f"{args.input}/iconqa_data/iconqa/test/fill_in_blank/{question_id}/image.png")
+    question_data = json.load(open(f"{args.input}/iconqa_data/iconqa/test/fill_in_blank/{question_id}/data.json"))
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+    ])
+    im = transform(im)
+    
+    #
+    grid_size = int(np.sqrt(aug_att_mat.size(-1))) -1
+    print("\n grid_size:", grid_size)
+    print("\n v[0, 1:]: ", v[0, 1:].shape)
+    mask = v[0, 1:].reshape(grid_size, grid_size).detach().numpy()
+    print("\n mask 1:", mask.shape)
+    print("\n mask 1:", mask.shape)
+    mask = cv2.resize(mask / mask.max(), im.size)[..., np.newaxis]
+    result = (mask * im).astype("uint8")
+
+    fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(16, 16))
+    fig.suptitle(f'Question {question_id}: {question_data["question"]}')
+
+    ax1.set_title('Original')
+    ax2.set_title('Attention Map')
+    _ = ax1.imshow(im)
+    _ = ax2.imshow(result)
+
+    fig.savefig(f'../attention_maps/fill_in_blank/test/{question_id}.png')
+
+
+
+def visualize_patch_attention_map(aug_att_mat, v, v_skip, v_grid_size, question_id): 
     # question_id = 103
     #
     # Visualize
@@ -161,6 +196,9 @@ def visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size, question_id):
     #grid_size = int(np.sqrt(aug_att_mat.size(-1)))
     grid_size = v_grid_size; # Hard coded for now to get the last layer of [1, 2, 3, 4, 7]
     #mask = v[0, 1:].reshape(grid_size, grid_size).detach().numpy()
+    
+    # As per https://jacobgil.github.io/deeplearning/vision-transformer-explainability
+    # It seems the first token represents a class token that flows through the Transformer, and will be used at the end to make the prediction.
     patch_skip = v_skip + 1
     patch_take_to =  patch_skip + grid_size*grid_size 
     
@@ -172,8 +210,9 @@ def visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size, question_id):
     result = (mask * im).astype("uint8")
 
     # Plot figure
-    fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(16, 16))
-    fig.suptitle(f'Question {question_id}: {question_data["question"]}')
+    #fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(16, 16))
+    fig, (ax1, ax2) = plt.subplots(ncols=2)
+    fig.suptitle(f'Question {question_id}: {question_data["question"]}', wrap=True)
 
     ax1.set_title('Original')
     ax2.set_title('Attention Map')
@@ -181,7 +220,7 @@ def visualize_attention_map(aug_att_mat, v, v_skip, v_grid_size, question_id):
     _ = ax2.imshow(result)
     #fig.show()
     
-    fig.savefig(f'../attention_maps/fill_in_blank/test/{question_id}-{v_grid_size}.png')
+    fig.savefig(f'../attention_maps/fill_in_blank/test/{question_id}-{v_grid_size}x{v_grid_size}.png')
 
 hook_activations = {}
 vit_attention_hook_name = 'vit_attention'
@@ -201,18 +240,19 @@ def hook_attention_weight(model):
 def inspect_attention(batch_size, question_id):
     print("Inspecing the attention for question:", question_id)
     #print(model)
-    print(len(hook_activations[vit_attention_hook_name]))
+    print("len(hook_activations[vit_attention_hook_name]):", len(hook_activations[vit_attention_hook_name]))
     
     # It dould be [datasize, headsize, ?,?] why 80x80 in the last dim
     # https://jacobgil.github.io/deeplearning/vision-transformer-explainability
     # is that mean 80 = number of path 79 + 1 for class token.
-    print(hook_activations[vit_attention_hook_name][0].size())
+    print("hook_activations[vit_attention_hook_name][0].size() : ", hook_activations[vit_attention_hook_name][0].size())
     
     #print(model.v_att.dropout.state_dict())
     #att_mat = torch.stack(model.v_att.dropout).squeeze(1)
     #print(att_mat)
     att_mat=hook_activations[vit_attention_hook_name]
     # att_mat[0] = first images
+    print('Hooked attention matrix att_mat len:', len(att_mat))
     generate_attention_map(att_mat[0], batch_size, question_id)
 
 def parse_args():
@@ -294,4 +334,5 @@ if __name__ == '__main__':
     if args.inspect_att:
         inspect_attention(batch_size, args.test_ids[0])
 
+    print(model)
     print("Done.", flush=True)
