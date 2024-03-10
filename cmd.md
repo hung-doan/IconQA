@@ -4,3 +4,7 @@ python eval.py --input "F:\Me\ML\IconQA\mount\data" --inspect-att True --debug T
 python eval.py  --input "F:\Me\ML\IconQA\mount\data" --inspect-att True --debug True --model patch_transformer_ques_bert --label exp_paper --test_ids 103
 
 jupyter lab --notebook-dir=F:/Me
+
+
+python eval.py --input "F:\Me\ML\IconQA\mount\data" --model patch_transformer_ques_bert --label exp0
+python train.py --input "F:\Me\ML\IconQA\mount\data" --model patch_transformer_ques_bert --label exp0 
